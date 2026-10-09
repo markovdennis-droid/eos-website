@@ -20,3 +20,6 @@ body{background:#02050f;isolation:isolate}#stars{z-index:-1}.haze{z-index:-2;bac
 
 /* Gold tint for the existing zodiac artwork. */
 .zodiac button img,.sign-icon img,#sign-matches img,.compat-pair img{filter:sepia(1) saturate(2.8) hue-rotate(350deg) brightness(1.08) drop-shadow(0 3px 3px #0009) drop-shadow(0 0 8px #e7b64c55)}
+
+/* Slim the existing glyph edges while retaining their shading. */
+.zodiac button img{filter:url("#eos-thin-sign") sepia(1) saturate(2.8) hue-rotate(350deg) brightness(1.08) drop-shadow(0 3px 3px #0009) drop-shadow(0 0 5px #e7b64c33)}
