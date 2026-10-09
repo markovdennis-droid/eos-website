@@ -44,16 +44,138 @@ let installPrompt;window.addEventListener('beforeinstallprompt',e=>{e.preventDef
 $('#install').onclick=async()=>{if(installPrompt){await installPrompt.prompt();await installPrompt.userChoice;installPrompt=null;return}modal('Eos на твоём экране',`<p><b>iPhone / iPad:</b> открой сайт в Safari, нажми «Поделиться», затем «На экран Домой».</p><p><b>Android:</b> в меню Chrome выбери «Добавить на главный экран» или «Установить приложение».</p><p><b>Компьютер:</b> используй значок установки в адресной строке Chrome или Edge, если он доступен.</p><p>Установка работает после размещения сайта на HTTPS. При открытии файла с компьютера доступен сам сайт; отдельного APK или приложения в магазине нет.</p>`)};
 $('#about').onclick=()=>modal('О Eos','<p>Eos — маленький ежедневный ритуал. Тексты взяты из вашего приложения Horoscope 10: общие и любовные — из годовых наборов для каждого знака, работа и советы — из тематических банков. На сайте показаны полные исходные записи. Доступны календарь, три языка прогнозов и сохранённое. Eos — единый сайт, который можно установить на главный экран телефона. Это ознакомительные тексты, не персональный астрологический расчёт.</p><p>Фаза Луны рассчитывается приближённо по среднему лунному циклу. Совместимость — игровая интерпретация четырёх стихий.</p><p>Сонник: Густав Миллер, оригинал из Project Gutenberg и 16 кратких русских пересказов отдельных фрагментов. Исторические толкования не являются фактическими прогнозами.</p><p>Любимый знак хранится только в этом браузере. На сайте нет аналитики, регистрации и передачи введённых слов на сервер.</p><p><a href="miller-original.txt" download>Скачать оригинал сонника</a> · <a href="https://www.gutenberg.org/ebooks/926" target="_blank" rel="noreferrer">Источник</a></p>');
 // Three depth planes, low-amplitude parallax and slow twinkling.
+// The constellations live here too, so one of them can light up at a time.
 (()=>{
  const canvas=$('#stars'),ctx=canvas.getContext('2d'),reduce=matchMedia('(prefers-reduced-motion: reduce)');
+ // Real outlines, in unit coordinates scaled into the viewport.
+ const FIGURES=[
+  {cx:.16,cy:.16,s:.24,                      // Большая Медведица
+   p:[[0,.35],[.17,.42],[.34,.40],[.50,.30],[.66,.46],[.86,.52],[1,.30]],
+   e:[[0,1],[1,2],[2,3],[3,4],[4,5],[5,6]]},
+  {cx:.46,cy:.07,s:.14,                      // Кассиопея
+   p:[[0,.20],[.25,.55],[.50,.18],[.75,.60],[1,.22]],
+   e:[[0,1],[1,2],[2,3],[3,4]]},
+  {cx:.09,cy:.80,s:.19,                      // Орион
+   p:[[.10,.05],[.85,0],[.38,.50],[.50,.52],[.62,.54],[.05,1],[.90,.95]],
+   e:[[0,2],[2,3],[3,4],[4,1],[2,5],[4,6]]},
+  {cx:.70,cy:.90,s:.12,                      // Лира
+   p:[[.50,0],[.20,.45],[.80,.40],[.30,1],[.75,.95]],
+   e:[[0,1],[0,2],[1,3],[2,4],[3,4]]}
+ ];
+ const HOLD=7, FLARE=3.2;   // seconds: one figure's turn, and how long its flare lasts
+ function constellations(t){
+  const unit=Math.min(w,h),depth=.55,ox0=px*depth,oy0=py*depth;
+  const turn=HOLD*FIGURES.length,phase=((t%turn)+turn)%turn;
+  const active=Math.floor(phase/HOLD),local=phase-active*HOLD;
+  const flare=local<FLARE?Math.sin(Math.PI*local/FLARE)**2:0;
+  for(let fi=0;fi<FIGURES.length;fi++){
+   const f=FIGURES[fi],lift=fi===active?flare:0;
+   const size=unit*f.s,ox=w*f.cx+ox0,oy=h*f.cy+oy0;
+   const at=i=>[ox+f.p[i][0]*size,oy+f.p[i][1]*size];
+   ctx.strokeStyle=`rgba(176,212,255,${(.18+.42*lift).toFixed(3)})`;
+   ctx.lineWidth=1.1+.5*lift;
+   ctx.beginPath();
+   for(const [a,b] of f.e){const[x1,y1]=at(a),[x2,y2]=at(b);ctx.moveTo(x1,y1);ctx.lineTo(x2,y2)}
+   ctx.stroke();
+   for(let i=0;i<f.p.length;i++){
+    const [x,y]=at(i),rr=9+7*lift;
+    const g=ctx.createRadialGradient(x,y,0,x,y,rr);
+    g.addColorStop(0,`rgba(214,232,255,${(.45+.45*lift).toFixed(3)})`);
+    g.addColorStop(1,'rgba(214,232,255,0)');
+    ctx.fillStyle=g;ctx.fillRect(x-rr,y-rr,rr*2,rr*2);
+    ctx.fillStyle=`rgba(235,245,255,${(.8+.2*lift).toFixed(3)})`;
+    ctx.beginPath();ctx.arc(x,y,1.6+.7*lift,0,Math.PI*2);ctx.fill();
+   }
+  }
+ }
  let w,h,dpr,points=[],frame=0,last=0,time=0,px=0,py=0,tx=0,ty=0;
  function setup(){w=innerWidth;h=innerHeight;dpr=Math.min(devicePixelRatio||1,2);canvas.width=w*dpr;canvas.height=h*dpr;canvas.style.width=w+'px';canvas.style.height=h+'px';ctx.setTransform(dpr,0,0,dpr,0,0);let seed=381;const rnd=()=>{seed=seed*16807%2147483647;return seed/2147483647};points=[];
  for(let i=0;i<Math.min(950,Math.round(w*h/1600));i++){const z=rnd();points.push({x:rnd()*(w+100)-50,y:rnd()*(h+100)-50,z,r:z<.65?rnd()*.65+.25:rnd()*1.1+.7,a:rnd()*.48+.2,p:rnd()*Math.PI*2,blue:rnd()>.35})}paint(0)}
- function paint(t){ctx.clearRect(0,0,w,h);for(const s of points){const depth=.2+s.z*s.z*1.8,x=s.x+px*depth+Math.sin(t*.07+s.p)*depth*2,y=s.y+py*depth+Math.cos(t*.06+s.p)*depth*2;const alpha=s.a*(.8+.2*Math.sin(t*.55+s.p));ctx.fillStyle=s.blue?`rgba(185,212,255,${alpha})`:`rgba(249,232,198,${alpha})`;if(s.z>.9){const glow=ctx.createRadialGradient(x,y,0,x,y,s.r*7);glow.addColorStop(0,`rgba(169,207,255,${alpha*.4})`);glow.addColorStop(1,'rgba(130,180,255,0)');ctx.fillStyle=glow;ctx.fillRect(x-s.r*7,y-s.r*7,s.r*14,s.r*14);ctx.fillStyle=`rgba(227,240,255,${alpha})`}ctx.beginPath();ctx.arc(x,y,s.r,0,Math.PI*2);ctx.fill();if(s.z>.97){ctx.strokeStyle=`rgba(187,217,255,${alpha*.5})`;ctx.lineWidth=.5;ctx.beginPath();ctx.moveTo(x-4*s.r,y);ctx.lineTo(x+4*s.r,y);ctx.moveTo(x,y-4*s.r);ctx.lineTo(x,y+4*s.r);ctx.stroke()}}}
+ function paint(t){ctx.clearRect(0,0,w,h);const neb=$('#universe');if(neb)neb.style.transform=`translate3d(${(px*.35).toFixed(2)}px,${(py*.35).toFixed(2)}px,0)`;for(const s of points){const depth=.2+s.z*s.z*1.8,x=s.x+px*depth+Math.sin(t*.07+s.p)*depth*2,y=s.y+py*depth+Math.cos(t*.06+s.p)*depth*2;const alpha=s.a*(.8+.2*Math.sin(t*.55+s.p));ctx.fillStyle=s.blue?`rgba(185,212,255,${alpha})`:`rgba(249,232,198,${alpha})`;if(s.z>.9){const glow=ctx.createRadialGradient(x,y,0,x,y,s.r*7);glow.addColorStop(0,`rgba(169,207,255,${alpha*.4})`);glow.addColorStop(1,'rgba(130,180,255,0)');ctx.fillStyle=glow;ctx.fillRect(x-s.r*7,y-s.r*7,s.r*14,s.r*14);ctx.fillStyle=`rgba(227,240,255,${alpha})`}ctx.beginPath();ctx.arc(x,y,s.r,0,Math.PI*2);ctx.fill();if(s.z>.97){ctx.strokeStyle=`rgba(187,217,255,${alpha*.5})`;ctx.lineWidth=.5;ctx.beginPath();ctx.moveTo(x-4*s.r,y);ctx.lineTo(x+4*s.r,y);ctx.moveTo(x,y-4*s.r);ctx.lineTo(x,y+4*s.r);ctx.stroke()}}constellations(performance.now()/1000)}
  function tick(now){frame=0;if(document.hidden||reduce.matches||$('#wheel').classList.contains('paused'))return;if(now-last>32){time+=Math.min((now-last)/1000,.05);last=now;px+=(tx-px)*.035;py+=(ty-py)*.035;paint(time)}frame=requestAnimationFrame(tick)}
  function run(){if(frame)cancelAnimationFrame(frame);frame=0;last=performance.now();if(!document.hidden&&!reduce.matches&&!$('#wheel').classList.contains('paused'))frame=requestAnimationFrame(tick);else paint(time)}
  addEventListener('pointermove',e=>{if(e.pointerType==='mouse'&&!reduce.matches){tx=(e.clientX/w-.5)*18;ty=(e.clientY/h-.5)*14}},{passive:true});document.addEventListener('pointerleave',()=>{tx=ty=0});addEventListener('resize',setup);document.addEventListener('visibilitychange',run);reduce.addEventListener('change',()=>{px=py=tx=ty=0;run()});$('#motion').addEventListener('click',run);setup();run();
 })();
+// Earth turning on its axis. The flat map is wrapped onto a sphere per frame through
+// a lookup table built once per resize, so each frame is just a texture read.
+// A still Earth is baked into celestial-soft.png underneath: if the map can't be read
+// (opening index.html straight off disk taints the canvas), that copy simply stays.
+(()=>{
+ const cv=$('#earth');if(!cv)return;
+ const ctx=cv.getContext('2d'),reduce=matchMedia('(prefers-reduced-motion: reduce)');
+ const TILT=.41,LIGHT=[.5022,.5877,.6343],PAD=1.2,TURN=150,BASE=2.1;
+ let tex=null,TW=0,TH=0,S=0,buf=null,row=null,lon=null,shade=null,rim=null,frame=0,last=0,spun=BASE;
+
+ function setup(){
+  const dpr=Math.min(devicePixelRatio||1,2),size=Math.round(cv.clientWidth*dpr);
+  if(!size||!tex)return false;
+  S=size;cv.width=S;cv.height=S;
+  buf=ctx.createImageData(S,S);
+  row=new Int32Array(S*S);lon=new Float32Array(S*S);
+  shade=new Float32Array(S*S);rim=new Float32Array(S*S);
+  const R=S/(2*PAD),c=S/2,ct=Math.cos(TILT),st=Math.sin(TILT),d=buf.data;
+  for(let y=0,i=0;y<S;y++)for(let x=0;x<S;x++,i++){
+   const nx=(x+.5-c)/R,ny=(y+.5-c)/R,r2=nx*nx+ny*ny,rad=Math.sqrt(r2);
+   if(r2<=1){
+    const nz=Math.sqrt(1-r2),ty=ny*ct-nx*st,tx=nx*ct+ny*st;
+    const lat=Math.asin(Math.max(-1,Math.min(1,-ty)));
+    row[i]=Math.round((.5-lat/Math.PI)*(TH-1))*TW;
+    lon[i]=Math.atan2(tx,Math.max(nz,1e-6));
+    const day=Math.pow(Math.max(0,nx*LIGHT[0]+ny*LIGHT[1]+nz*LIGHT[2]),.75);
+    shade[i]=.10+.90*day;
+    rim[i]=Math.pow(Math.max(0,(rad-.80)/.20),1.6)*day*.95;
+    d[i*4+3]=Math.round(Math.min(1,(1-rad)*R/1.6)*255);
+   }else{
+    // Outside the disc only the atmosphere shows, and only on the lit side.
+    const k=Math.exp(-Math.pow((rad-1)/.055,2));
+    const day=Math.max(0,(nx*LIGHT[0]+ny*LIGHT[1])/rad);
+    shade[i]=-1;rim[i]=0;
+    d[i*4]=110;d[i*4+1]=176;d[i*4+2]=240;d[i*4+3]=Math.round(k*day*150);
+   }
+  }
+  return true;
+ }
+ function paint(t){
+  const d=buf.data,turn=lon.length;
+  spun=BASE+t*(Math.PI*2/TURN);
+  for(let i=0;i<turn;i++){
+   if(shade[i]<0)continue;
+   const u=(lon[i]+spun)/(Math.PI*2),col=((u%1)+1)%1;
+   const s=(row[i]+((col*(TW-1))|0))*4,k=shade[i],g=rim[i];
+   d[i*4]=tex[s]*k+96*g;
+   d[i*4+1]=tex[s+1]*k+162*g;
+   d[i*4+2]=tex[s+2]*k+232*g;
+  }
+  ctx.putImageData(buf,0,0);
+ }
+ function tick(now){
+  frame=0;
+  if(document.hidden||reduce.matches||$('#wheel').classList.contains('paused'))return;
+  if(now-last>40){last=now;paint(now/1000)}
+  frame=requestAnimationFrame(tick);
+ }
+ function run(){
+  if(frame)cancelAnimationFrame(frame);frame=0;last=0;
+  if(!document.hidden&&!reduce.matches&&!$('#wheel').classList.contains('paused'))frame=requestAnimationFrame(tick);
+  else paint(performance.now()/1000);
+ }
+ const img=new Image();
+ img.onload=()=>{
+  const off=document.createElement('canvas');
+  off.width=TW=img.naturalWidth;off.height=TH=img.naturalHeight;
+  off.getContext('2d').drawImage(img,0,0);
+  try{tex=off.getContext('2d').getImageData(0,0,TW,TH).data}catch{return}
+  if(!setup())return;
+  cv.style.opacity='1';
+  run();
+  addEventListener('resize',()=>{if(setup())run()});
+  document.addEventListener('visibilitychange',run);
+  reduce.addEventListener('change',run);
+  $('#motion').addEventListener('click',run);
+ };
+ img.src='assets/earth-map.png';
+})();
+
 if('serviceWorker' in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('./sw.js').catch(()=>{});
 
 // Name search keeps the supplied silver symbol alongside every result.
@@ -74,12 +196,29 @@ $('#sign-search').addEventListener('input',()=>{
  function shoot(){if(document.hidden||reduce.matches||wheel.classList.contains('paused'))return;right=!right;meteor.className=right?'from-right':'from-left';meteor.getAnimations().forEach(a=>a.cancel());meteor.animate([{opacity:0,transform:'translate3d(0,0,0)'},{opacity:.85,offset:.15},{opacity:.65,offset:.7},{opacity:0,transform:`translate3d(${right?'-':''}${Math.min(innerWidth*.65,720)}px,${Math.min(innerHeight*.6,480)}px,0)`}],{duration:1700,easing:'ease-in'});}
  setInterval(shoot,INTERVAL);
 })();
-// Layered galactic dust: render once per resize; drift with CSS transforms.
+// Nebula: one offscreen pass per resize — cobalt and violet clouds around a core
+// in the upper right, plus star dust scattered through them. Drifts with the cursor.
 (()=>{
  const c=$('#universe'),ctx=c.getContext('2d');
- function draw(){const w=innerWidth,h=innerHeight,dpr=Math.min(devicePixelRatio||1,1.5);c.width=w*dpr;c.height=h*dpr;c.style.width=w+'px';c.style.height=h+'px';ctx.setTransform(dpr,0,0,dpr,0,0);let seed=83;const rand=()=>{seed=seed*16807%2147483647;return seed/2147483647};ctx.clearRect(0,0,w,h);
- for(let i=0;i<150;i++){const t=rand(),x=w*(.18+t*.92)+(rand()-.5)*w*.3,y=h*(1-t)+(rand()-.5)*h*.32,r=50+rand()*Math.min(w,h)*.19,g=ctx.createRadialGradient(x,y,0,x,y,r);g.addColorStop(0,`rgba(${i%3===0?'123,91,178':'58,113,174'},${.014+rand()*.018})`);g.addColorStop(1,'rgba(15,31,65,0)');ctx.fillStyle=g;ctx.fillRect(x-r,y-r,r*2,r*2)}
- for(let i=0;i<1400;i++){const t=rand(),x=w*(.18+t*.92)+(rand()+rand()-1)*w*.15,y=h*(1-t)+(rand()+rand()-1)*h*.16;ctx.fillStyle=`rgba(180,202,245,${rand()*.19})`;ctx.beginPath();ctx.arc(x,y,.2+rand()*.65,0,Math.PI*2);ctx.fill()}
+ const FX=.78,FY=.2,PAD=30;
+ function draw(){
+  const w=innerWidth+PAD*2,h=innerHeight+PAD*2,dpr=Math.min(devicePixelRatio||1,1.5);
+  c.width=w*dpr;c.height=h*dpr;c.style.width=w+'px';c.style.height=h+'px';
+  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,w,h);
+  const m=Math.max(w,h);
+  const clouds=[
+   [FX*w,FY*h,m*.62,'rgba(26,54,152,.46)'],
+   [FX*w+w*.12,FY*h-h*.06,m*.40,'rgba(78,40,150,.36)'],
+   [FX*w-w*.30,FY*h+h*.18,m*.46,'rgba(11,26,94,.44)'],
+   [w*.5,h*.5,m*.80,'rgba(6,14,56,.52)']
+  ];
+  for(const [x,y,r,col] of clouds){const g=ctx.createRadialGradient(x,y,0,x,y,r);g.addColorStop(0,col);g.addColorStop(1,'rgba(3,8,24,0)');ctx.fillStyle=g;ctx.fillRect(0,0,w,h)}
+  let seed=1337;const rand=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296};
+  for(let i=0;i<2400;i++){
+   const t=rand(),x=FX*w+(rand()+rand()-1)*w*.62,y=FY*h+(rand()+rand()-1)*h*.55,a=(1-t)*.36+.04,big=rand()<.08?1.6:1;
+   ctx.fillStyle=`rgba(${170+rand()*55|0},${195+rand()*45|0},250,${a.toFixed(3)})`;
+   ctx.fillRect(x,y,big,big);
+  }
  }
  draw();addEventListener('resize',draw);
 })();
