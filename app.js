@@ -31,7 +31,7 @@ $('#motion').onclick=()=>{const paused=$('#wheel').classList.toggle('paused');$(
 function modal(title,body){$('#dialog-title').textContent=title;$('#dialog-body').innerHTML=body;$('#info').showModal()}
 $('.close').onclick=()=>$('#info').close();$('#info').addEventListener('click',e=>{if(e.target===$('#info')&&e.offsetX>=0&&e.offsetY>=0){const r=$('#info').getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)$('#info').close()}});
 $('#share').onclick=async()=>{const text=`Eos · ${signs[selected][1]} ${signs[selected][0]} · ${$('#today').textContent}\n${$('#forecast-text').textContent}`;try{if(navigator.share){await navigator.share({title:'Eos',text})}else if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(text);toast('Гороскоп скопирован')}else{modal('Твой гороскоп','<p id="copy-text"></p><p>Выдели текст и скопируй его.</p>');$('#copy-text').textContent=text}}catch(e){if(e.name!=='AbortError')toast('Не удалось поделиться. Попробуй ещё раз.')}};
-function updateDay(){const d=new Date();day=dateKey();$('#today').textContent=new Intl.DateTimeFormat('ru',{day:'numeric',month:'long',year:'numeric'}).format(d);$('#year').textContent=d.getFullYear();const cycle=29.530588853,age=(((d.getTime()-Date.UTC(2000,0,6,18,14))/86400000)%cycle+cycle)%cycle,p=age/cycle,illum=Math.round((1-Math.cos(2*Math.PI*p))*50);const names=['Новолуние','Растущий серп','Первая четверть','Растущая Луна','Полнолуние','Убывающая Луна','Последняя четверть','Убывающий серп'];const name=names[Math.floor(p*8+.5)%8];$('#moon-name').textContent=name;$('#moon-short').textContent=name;$('#moon-detail').textContent=`Освещённость ≈ ${illum}% · расчётная фаза`;$('#intention').textContent=['Выбирать то, что откликается','Быть внимательнее к себе','Оставлять место для нового','Двигаться в своём темпе','Замечать простые радости','Говорить о важном','Доверять маленьким шагам'][hash(day)%7];render()}
+function updateDay(){const d=new Date();day=dateKey();$('#today').textContent=new Intl.DateTimeFormat('ru',{day:'numeric',month:'long',year:'numeric'}).format(d);$('#year').textContent=d.getFullYear();const cycle=29.530588853,age=(((d.getTime()-Date.UTC(2000,0,6,18,14))/86400000)%cycle+cycle)%cycle,p=age/cycle,illum=Math.round((1-Math.cos(2*Math.PI*p))*50);window.EOS_PHASE=p;if(window.__eosPhase)window.__eosPhase(p);const names=['Новолуние','Растущий серп','Первая четверть','Растущая Луна','Полнолуние','Убывающая Луна','Последняя четверть','Убывающий серп'];const name=names[Math.floor(p*8+.5)%8];$('#moon-name').textContent=name;$('#moon-short').textContent=name;$('#moon-detail').textContent=`Освещённость ≈ ${illum}% · расчётная фаза`;$('#intention').textContent=['Выбирать то, что откликается','Быть внимательнее к себе','Оставлять место для нового','Двигаться в своём темпе','Замечать простые радости','Говорить о важном','Доверять маленьким шагам'][hash(day)%7];render()}
 updateDay();setInterval(()=>{if(dateKey()!==day)updateDay()},30000);
 $('#sign-a').value=selected;$('#sign-b').value=4;
 function compatibility(){const ai=+$('#sign-a').value,bi=+$('#sign-b').value;$('#compat-pair').innerHTML=[ai,bi].map(i=>`<span><img src="${zodiacImage(i)}" alt="">${signs[i][0]}</span>`).join('<b>✧</b>');const a=signs[+$('#sign-a').value],b=signs[+$('#sign-b').value],x=a[3],y=b[3];let t;if(x===y)t='Вы говорите на языке одной стихии: понять привычный ритм друг друга может быть проще. Оставляйте место и для различий.';else if((x===0&&y===2)||(x===2&&y===0))t='Огонь и Воздух: идеи встречаются с энергией. Пробуйте новое вместе, но не забывайте договариваться о повседневных мелочах.';else if((x===1&&y===3)||(x===3&&y===1))t='Земля и Вода: забота встречается с устойчивостью. Ваш маленький ритуал может стать хорошей опорой для близости.';else t='Разные стихии — разные способы чувствовать. Вместо догадок спрашивайте, какая поддержка нужна каждому из вас.';$('#compat-result').textContent=t}
@@ -174,6 +174,58 @@ $('#about').onclick=()=>modal('О Eos','<p>Eos — маленький ежедн
   $('#motion').addEventListener('click',run);
  };
  img.src='assets/earth-map.png';
+})();
+
+// The moon in the artwork is photographed full, while the page says which phase it is.
+// This lays the real terminator over it, so the picture agrees with the text: the far
+// side goes dark and what is left is the crescent of the day.
+// Everything is built here — the artwork holds the only geometry this needs.
+(()=>{
+ const img=document.querySelector('.celestial-realistic'),wheel=$('#wheel');
+ if(!img||!wheel)return;
+ // Moon disc inside celestial-soft.png, and that image inside .wheel (inset 24%, 52% wide).
+ const MX=873.5/1254,MY=458/1254,MRAD=331/1254,BOX=.52,OFF=.24,PAD=1.02;
+ const cv=document.createElement('canvas');
+ cv.id='moon-shadow';cv.setAttribute('aria-hidden','true');
+ Object.assign(cv.style,{position:'absolute',
+  left:((OFF+MX*BOX)*100).toFixed(3)+'%',top:((OFF+MY*BOX)*100).toFixed(3)+'%',
+  width:(MRAD*2*BOX*PAD*100).toFixed(3)+'%',aspectRatio:'1',
+  transform:'translate(-50%,-50%) translateZ(54px)',pointerEvents:'none'});
+ img.insertAdjacentElement('afterend',cv);
+ const ctx=cv.getContext('2d');
+
+ // The lit limb always faces the sun, and in this artwork the sun sits down and to
+ // the left of the moon, so the crescent opens that way.
+ const SUN=Math.atan2(709.5-458,527-873.5);
+ const FLOOR=.14;   // never show less than this lit, or the hero goes black at new moon
+
+ function draw(p){
+  const dpr=Math.min(devicePixelRatio||1,2),S=Math.round(cv.clientWidth*dpr);
+  if(!S)return;
+  if(cv.width!==S){cv.width=cv.height=S}
+  const R=S/(2*PAD),c=S/2;
+  let lit=(1-Math.cos(2*Math.PI*p))/2;
+  lit=FLOOR+(1-FLOOR)*lit;
+  const k=1-2*lit;                       // +1 thin crescent, 0 half, -1 full
+  ctx.clearRect(0,0,S,S);
+  ctx.save();
+  ctx.translate(c,c);ctx.rotate(SUN);ctx.translate(-c,-c);
+  ctx.beginPath();ctx.arc(c,c,R,0,Math.PI*2);ctx.clip();
+  // Three passes a hair apart soften the terminator without needing a blur filter.
+  for(const [d,a] of [[-.014,.58],[0,.58],[.014,.58]]){
+   const kk=Math.max(-1,Math.min(1,k+d));
+   ctx.beginPath();
+   ctx.arc(c,c,R,Math.PI/2,Math.PI*1.5,false);       // the unlit limb
+   ctx.ellipse(c,c,Math.abs(kk)*R,R,0,Math.PI*1.5,Math.PI/2,kk<0);
+   ctx.closePath();
+   ctx.fillStyle=`rgba(4,8,20,${a})`;                // a little earthshine left behind
+   ctx.fill();
+  }
+  ctx.restore();
+ }
+ window.__eosPhase=draw;
+ const paint=()=>draw(typeof window.EOS_PHASE==='number'?window.EOS_PHASE:.5);
+ paint();addEventListener('resize',paint);
 })();
 
 if('serviceWorker' in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('./sw.js').catch(()=>{});
