@@ -3,7 +3,7 @@ const $=s=>document.querySelector(s);
 const signs=[['Овен','♈','21 марта — 19 апреля',0],['Телец','♉','20 апреля — 20 мая',1],['Близнецы','♊','21 мая — 20 июня',2],['Рак','♋','21 июня — 22 июля',3],['Лев','♌','23 июля — 22 августа',0],['Дева','♍','23 августа — 22 сентября',1],['Весы','♎','23 сентября — 22 октября',2],['Скорпион','♏','23 октября — 21 ноября',3],['Стрелец','♐','22 ноября — 21 декабря',0],['Козерог','♑','22 декабря — 19 января',1],['Водолей','♒','20 января — 18 февраля',2],['Рыбы','♓','19 февраля — 20 марта',3]];
 signs.forEach(s=>s[1]+='\uFE0E');
 const signAssets=['aries','taurus','gemini','cancer','leo','virgo','libra','scorpio','sagittarius','capricorn','aquarius','pisces'];
-const zodiacImage=i=>`assets/zodiac/zodiacSilver_${signAssets[i]}.png`;
+const zodiacImage=i=>`assets/zodiac/zodiacGold_${signAssets[i]}.png`;
 const store={get(k){try{return localStorage.getItem(k)}catch{return null}},set(k,v){try{localStorage.setItem(k,v);return true}catch{return false}},remove(k){try{localStorage.removeItem(k)}catch{}}};
 let saved=store.get('selena-sign'), selected=saved!==null&&/^\d+$/.test(saved)&&+saved<12?+saved:6,topic=0,day;
 let readingLanguage=store.get('eos-reading-language')||'ru';if(!['ru','en','es'].includes(readingLanguage))readingLanguage='ru';
@@ -198,7 +198,11 @@ $('#about').onclick=()=>modal('О Eos','<p>Eos — маленький ежедн
  // the left of the moon, so the crescent opens that way.
  const SUN=Math.atan2(709.5-458,527-873.5);
  const FLOOR=.14;    // never show less than this lit, or the hero goes black at new moon
- const TURN=240;     // seconds per revolution, same direction as the Earth
+ // A single photograph only holds the near side, and its outer limb is squeezed into a
+ // couple of pixels — spin the sphere right round and that squeeze smears across the
+ // face. So the surface sways instead: libration, the real ±8° nod that lets us see a
+ // little past each edge. It keeps the photograph honest and the moon alive.
+ const LIB=.14,LIBP=45;
  const CYCLE=100;    // seconds for a whole month of phases, starting at today's
  const TW=1024,TH=512;
  const reduce=matchMedia('(prefers-reduced-motion: reduce)');
@@ -257,7 +261,7 @@ $('#about').onclick=()=>modal('О Eos','<p>Eos — маленький ежедн
  function paint(t){
   let lit=(1-Math.cos(2*Math.PI*((base+t/CYCLE)%1)))/2;
   lit=FLOOR+(1-FLOOR)*lit;
-  const k=1-2*lit,d=buf.data,spin=t*(Math.PI*2/TURN);
+  const k=1-2*lit,d=buf.data,spin=LIB*Math.sin(t*(Math.PI*2/LIBP));
   for(let i=0;i<row.length;i++){
    if(row[i]<0)continue;
    const u=(lon[i]+spin)/(Math.PI*2),col=((u%1)+1)%1;
