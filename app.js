@@ -191,42 +191,113 @@ $('#about').onclick=()=>modal('О Eos','<p>Eos — маленький ежедн
  Object.assign(cv.style,{position:'absolute',
   left:((OFF+MX*BOX)*100).toFixed(3)+'%',top:((OFF+MY*BOX)*100).toFixed(3)+'%',
   width:(MRAD*2*BOX*PAD*100).toFixed(3)+'%',aspectRatio:'1',
-  transform:'translate(-50%,-50%) translateZ(54px)',pointerEvents:'none'});
+  transform:'translate(-50%,-50%) translateZ(54px)',pointerEvents:'none',opacity:'0'});
  img.insertAdjacentElement('afterend',cv);
  const ctx=cv.getContext('2d');
 
  // The lit limb always faces the sun, and in this artwork the sun sits down and to
  // the left of the moon, so the crescent opens that way.
  const SUN=Math.atan2(709.5-458,527-873.5);
- const FLOOR=.14;   // never show less than this lit, or the hero goes black at new moon
+ const FLOOR=.14;    // never show less than this lit, or the hero goes black at new moon
+ // A single photograph only holds the near side, and its outer limb is squeezed into a
+ // couple of pixels — spin the sphere right round and that squeeze smears across the
+ // face. So the surface sways instead: libration, the real ±8° nod that lets us see a
+ // little past each edge. It keeps the photograph honest and the moon alive.
+ const LIB=.14,LIBP=45;
+ const CYCLE=100;    // seconds for a whole month of phases, starting at today's
+ const TW=1024,TH=512;
+ const reduce=matchMedia('(prefers-reduced-motion: reduce)');
+ let tex=null,S=0,buf=null,row=null,lon=null,ux=null,chord=null,frame=0,last=0,base=0;
 
- function draw(p){
-  const dpr=Math.min(devicePixelRatio||1,2),S=Math.round(cv.clientWidth*dpr);
-  if(!S)return;
-  if(cv.width!==S){cv.width=cv.height=S}
-  const R=S/(2*PAD),c=S/2;
-  let lit=(1-Math.cos(2*Math.PI*p))/2;
-  lit=FLOOR+(1-FLOOR)*lit;
-  const k=1-2*lit;                       // +1 thin crescent, 0 half, -1 full
-  ctx.clearRect(0,0,S,S);
-  ctx.save();
-  ctx.translate(c,c);ctx.rotate(SUN);ctx.translate(-c,-c);
-  ctx.beginPath();ctx.arc(c,c,R,0,Math.PI*2);ctx.clip();
-  // Three passes a hair apart soften the terminator without needing a blur filter.
-  for(const [d,a] of [[-.014,.58],[0,.58],[.014,.58]]){
-   const kk=Math.max(-1,Math.min(1,k+d));
-   ctx.beginPath();
-   ctx.arc(c,c,R,Math.PI/2,Math.PI*1.5,false);       // the unlit limb
-   ctx.ellipse(c,c,Math.abs(kk)*R,R,0,Math.PI*1.5,Math.PI/2,kk<0);
-   ctx.closePath();
-   ctx.fillStyle=`rgba(4,8,20,${a})`;                // a little earthshine left behind
-   ctx.fill();
+ // Unwrap the photographed disc into a flat map. The photo only shows the near side,
+ // so the far half is that same face mirrored, flattened a little so its dark seas
+ // read as the crater-covered far side rather than a repeat.
+ function unwrap(){
+  const n=img.naturalWidth;if(!n)return false;
+  const off=document.createElement('canvas');off.width=off.height=n;
+  const octx=off.getContext('2d');octx.drawImage(img,0,0,n,n);
+  let src;try{src=octx.getImageData(0,0,n,n).data}catch{return false}
+  // Sample just inside the disc: at the very limb the pixels are already blending into
+  // the sun's glow, and any that leak in ride round the sphere as a bright band.
+  const cx=MX*n,cy=MY*n,R=MRAD*n*.97;
+  tex=new Uint8ClampedArray(TW*TH*3);
+  for(let j=0;j<TH;j++){
+   const lat=(.5-(j+.5)/TH)*Math.PI,cl=Math.cos(lat),py=Math.round(cy-R*Math.sin(lat));
+   for(let i=0;i<TW;i++){
+    const lo=((i+.5)/TW)*2*Math.PI-Math.PI,ab=Math.abs(lo);
+    const use=ab<Math.PI/2?lo:(lo>0?Math.PI-lo:-Math.PI-lo);
+    const far=Math.max(0,Math.min(1,(ab-1.396)/.349));   // cross-fade over 80°..100°
+    const px=Math.round(cx+R*cl*Math.sin(use));
+    const s=(py*n+px)*4,d=(j*TW+i)*3;
+    for(let ch=0;ch<3;ch++)tex[d+ch]=src[s+ch]*(1-.07*far)+10*far;
+   }
   }
-  ctx.restore();
+  return true;
  }
- window.__eosPhase=draw;
- const paint=()=>draw(typeof window.EOS_PHASE==='number'?window.EOS_PHASE:.5);
- paint();addEventListener('resize',paint);
+
+ function setup(){
+  const dpr=Math.min(devicePixelRatio||1,1.5),size=Math.round(cv.clientWidth*dpr);
+  if(!size||!tex)return false;
+  S=size;cv.width=cv.height=S;
+  buf=ctx.createImageData(S,S);
+  row=new Int32Array(S*S);lon=new Float32Array(S*S);
+  ux=new Float32Array(S*S);chord=new Float32Array(S*S);
+  const R=S/(2*PAD),c=S/2,d=buf.data,cs=Math.cos(-SUN),sn=Math.sin(-SUN);
+  for(let y=0,i=0;y<S;y++)for(let x=0;x<S;x++,i++){
+   const nx=(x+.5-c)/R,ny=(y+.5-c)/R,r2=nx*nx+ny*ny;
+   if(r2<=1){
+    const nz=Math.sqrt(1-r2);
+    row[i]=Math.round((.5-Math.asin(Math.max(-1,Math.min(1,-ny)))/Math.PI)*(TH-1))*TW;
+    lon[i]=Math.atan2(nx,Math.max(nz,1e-6));
+    // Terminator frame: turned so +x points at the sun. The ellipse that separates
+    // light from dark is then x = k·chord, and only k moves as the phase goes by.
+    const uy=nx*sn+ny*cs;
+    ux[i]=nx*cs-ny*sn;chord[i]=Math.sqrt(Math.max(0,1-uy*uy));
+    d[i*4+3]=Math.round(Math.min(1,(1-Math.sqrt(r2))*R/1.6)*255);
+   }else{row[i]=-1;d[i*4+3]=0}
+  }
+  return true;
+ }
+
+ function paint(t){
+  let lit=(1-Math.cos(2*Math.PI*((base+t/CYCLE)%1)))/2;
+  lit=FLOOR+(1-FLOOR)*lit;
+  const k=1-2*lit,d=buf.data,spin=LIB*Math.sin(t*(Math.PI*2/LIBP));
+  for(let i=0;i<row.length;i++){
+   if(row[i]<0)continue;
+   const u=(lon[i]+spin)/(Math.PI*2),col=((u%1)+1)%1;
+   const s=(row[i]+((col*(TW-1))|0))*3;
+   let m=(ux[i]-k*chord[i])/.06;
+   m=.07+.93*(m<0?0:m>1?1:m);
+   d[i*4]=tex[s]*m;d[i*4+1]=tex[s+1]*m;d[i*4+2]=tex[s+2]*m;
+  }
+  ctx.putImageData(buf,0,0);
+ }
+ function tick(now){
+  frame=0;
+  if(document.hidden||reduce.matches||wheel.classList.contains('paused'))return;
+  if(now-last>80){last=now;paint(now/1000)}      // slow turn, so a low rate is enough
+  frame=requestAnimationFrame(tick);
+ }
+ function run(){
+  if(frame)cancelAnimationFrame(frame);frame=0;last=0;
+  if(!document.hidden&&!reduce.matches&&!wheel.classList.contains('paused'))frame=requestAnimationFrame(tick);
+  else paint(performance.now()/1000);
+ }
+ function start(){
+  if(!unwrap()||!setup())return;                 // taints on file:// — the photo stays
+  // Start where the real moon is today, then let the month run.
+  base=(typeof window.EOS_PHASE==='number'?window.EOS_PHASE:.5)-performance.now()/1000/CYCLE;
+  base=((base%1)+1)%1;
+  cv.style.opacity='1';
+  run();
+  window.__eosPhase=p=>{base=((p-performance.now()/1000/CYCLE)%1+1)%1;if(!frame)paint(performance.now()/1000)};
+  addEventListener('resize',()=>{if(setup())run()});
+  document.addEventListener('visibilitychange',run);
+  reduce.addEventListener('change',run);
+  $('#motion').addEventListener('click',run);
+ }
+ if(img.complete&&img.naturalWidth)start();else img.addEventListener('load',start,{once:true});
 })();
 
 if('serviceWorker' in navigator&&location.protocol!=='file:')navigator.serviceWorker.register('./sw.js').catch(()=>{});
